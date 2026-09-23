@@ -4,7 +4,7 @@
 Plugin Name: LiqPay plugin 
 Plugin URI: https://github.com/f3lancer/woocommerce-liqpay-plugin
 Description: Додає метод оплати LiqPay до WooCommerce. Перенаправляє покупця на сторінку оплати LiqPay, а після завершення автоматично оновлює статус замовлення (успіх, помилка, повернення, заморожування тощо) через вебхук. Підтримує тестовий режим та налаштовувані статуси для кожного типу відповіді LiqPay.
-Version: 0.2.0
+Version: 0.3.0
 Author: Oleg Korenovsky
 License: GPL3
 Text Domain: liqpay

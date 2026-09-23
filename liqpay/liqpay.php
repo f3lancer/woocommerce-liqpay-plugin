@@ -131,15 +131,15 @@ function liqpay_gateway_class() {
 				'result_url'       => array(
 					'title'       => __( 'Result URL', 'liqpay' ),
 					'type'        => 'text',
-					'description' => __( 'URL у Вашому магазині на який покупець буде переадресовано після завершення покупки.', 'liqpay' ),
-					'default'     => 'https://example.com/checkout/order-received/',
+					'description' => __( 'Залиште порожнім — покупець буде перенаправлений на стандартну сторінку WooCommerce "Дякуємо за замовлення".', 'liqpay' ),
+					'default'     => '',
 					'desc_tip'    => true,
 				),
 				'server_url'       => array(
 					'title'       => __( 'Server URL', 'liqpay' ),
 					'type'        => 'text',
-					'description' => __( 'URL у Вашому магазині на який буде відправлено повідомлення про статус платежу.', 'liqpay' ),
-					'default'     => 'https://example.com/?wc-api=liqpay',
+					'description' => __( 'Залиште порожнім — URL для вебхуків буде згенеровано автоматично.', 'liqpay' ),
+					'default'     => '',
 					'desc_tip'    => true,
 				),
 				'status_section'     => array(
@@ -230,15 +230,13 @@ function liqpay_gateway_class() {
 			$result_url_option = $this->get_option('result_url');
 			$server_url_option = $this->get_option('server_url');
 
-			if (!empty($result_url_option)) {
-				$liqpay_args['result_url'] = $result_url_option;
-			} else {
-				$liqpay_args['result_url'] = $this->get_return_url($order);
-			}
+			$liqpay_args['result_url'] = !empty($result_url_option)
+				? $result_url_option
+				: $this->get_return_url($order);
 
-			if (!empty($server_url_option)) {
-				$liqpay_args['server_url'] = $server_url_option;
-			}
+			$liqpay_args['server_url'] = !empty($server_url_option)
+				? $server_url_option
+				: home_url('/?wc-api=liqpay');
 
 			$result = $liqpay->cnb_form_raw($liqpay_args);
 

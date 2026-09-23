@@ -4,7 +4,7 @@
 Plugin Name: LiqPay plugin 
 Plugin URI: https://github.com/f3lancer/woocommerce-liqpay-plugin
 Description: Додає метод оплати LiqPay до WooCommerce. Перенаправляє покупця на сторінку оплати LiqPay, а після завершення автоматично оновлює статус замовлення (успіх, помилка, повернення, заморожування тощо) через вебхук. Підтримує тестовий режим та налаштовувані статуси для кожного типу відповіді LiqPay.
-Version: 0.3.1
+Version: 0.3.2
 Author: Oleg Korenovsky
 License: GPL3
 Text Domain: liqpay
@@ -193,6 +193,54 @@ function liqpay_gateway_class() {
 
 		}
 
+		private function log( $message, $type = 'INFO' ) {
+			$upload_dir = wp_upload_dir();
+			$log_dir    = $upload_dir['basedir'] . '/liqpay-logs';
+			if ( ! file_exists( $log_dir ) ) {
+				wp_mkdir_p( $log_dir );
+			}
+			$log_file = $log_dir . '/liqpay.log';
+			$date     = current_time( 'Y-m-d H:i:s' );
+			file_put_contents( $log_file, "[{$date}] [{$type}] {$message}" . PHP_EOL, FILE_APPEND | LOCK_EX );
+		}
+
+		public function admin_options() {
+			$upload_dir = wp_upload_dir();
+			$log_file   = $upload_dir['basedir'] . '/liqpay-logs/liqpay.log';
+
+			if ( isset( $_POST['liqpay_clear_log'] ) && check_admin_referer( 'liqpay_clear_log' ) ) {
+				file_put_contents( $log_file, '' );
+			}
+
+			parent::admin_options();
+
+			$log_content = file_exists( $log_file ) ? file_get_contents( $log_file ) : '';
+			$lines       = array_filter( explode( PHP_EOL, $log_content ) );
+			$lines       = array_reverse( $lines );
+			?>
+			<h2>Журнал запитів LiqPay</h2>
+			<p>Всі запити на оплату та вебхуки від LiqPay. Найновіші записи вгорі.</p>
+			<div style="background:#1e1e1e;color:#d4d4d4;font-family:monospace;font-size:12px;padding:12px;height:300px;overflow-y:scroll;border:1px solid #ccc;border-radius:4px;">
+				<?php if ( empty( $lines ) ) : ?>
+					<span style="color:#888;">— записів поки немає —</span>
+				<?php else : ?>
+					<?php foreach ( $lines as $line ) :
+						$color = '#d4d4d4';
+						if ( strpos( $line, '[ERROR]' ) !== false ) $color = '#f48771';
+						if ( strpos( $line, '[INFO]' ) !== false )  $color = '#9cdcfe';
+						if ( strpos( $line, '[SUCCESS]' ) !== false ) $color = '#4ec9b0';
+						?>
+						<div style="color:<?php echo $color; ?>;border-bottom:1px solid #333;padding:3px 0;"><?php echo esc_html( $line ); ?></div>
+					<?php endforeach; ?>
+				<?php endif; ?>
+			</div>
+			<form method="post" style="margin-top:8px;">
+				<?php wp_nonce_field( 'liqpay_clear_log' ); ?>
+				<button type="submit" name="liqpay_clear_log" class="button" onclick="return confirm('Очистити журнал?')">Очистити журнал</button>
+			</form>
+			<?php
+		}
+
 		public function save_private_keys($settings) {
 			if (empty($settings['private_key'])) {
 				$settings['private_key'] = $this->get_option('private_key');
@@ -238,11 +286,19 @@ function liqpay_gateway_class() {
 				? $server_url_option
 				: home_url('/?wc-api=liqpay');
 
+			$this->log( '=== Запит на оплату ===' );
+			$this->log( 'Замовлення #' . $order_id . ' | Сума: ' . $order->get_total() . ' ' . get_woocommerce_currency() );
+			$this->log( 'Result URL: ' . $liqpay_args['result_url'] );
+			$this->log( 'Server URL: ' . $liqpay_args['server_url'] );
+			$this->log( 'Тестовий режим: ' . ( $is_test_mode ? 'так' : 'ні' ) );
+
 			$result = $liqpay->cnb_form_raw($liqpay_args);
 
             $order->update_status('pending', __('Awaiting LiqPay payment', 'liqpay'));
 
             WC()->cart->empty_cart();
+
+			$this->log( 'Покупця перенаправлено на LiqPay' );
 
 			return array(
 				'result'   => 'success',
@@ -251,24 +307,40 @@ function liqpay_gateway_class() {
 		}
 
 		public function liqpay_webhook() {
+            $this->log( '=== Вебхук отримано ===' );
+            $this->log( 'POST дані: ' . json_encode( $_POST ) );
+
             $liqpay = new LiqPay($this->public_key, $this->private_key);
+
             if (empty($_POST['data']) || empty($_POST['signature'])) {
+                $this->log( 'Помилка: відсутні data або signature', 'ERROR' );
                 wp_die('No data or signature');
             }
+
             $params = $liqpay->decode_params($_POST['data']);
+            $this->log( 'Декодовані параметри: ' . json_encode( $params ) );
+
             $sign = base64_encode( sha1(
                 $this->private_key .
                 $_POST['data'] .
                 $this->private_key
                 , 1 ));
+
             if ($sign !== $_POST['signature']) {
+                $this->log( 'Помилка: невірний підпис. Очікувалось: ' . $sign . ' | Отримано: ' . $_POST['signature'], 'ERROR' );
                 wp_die('Signature is not valid');
             }
+
+            $this->log( 'Підпис перевірено успішно' );
+
             $order = wc_get_order($params['order_id']);
             if (!$order) {
+                $this->log( 'Помилка: замовлення не знайдено. order_id=' . $params['order_id'], 'ERROR' );
                 wp_die('Order not found');
             }
+
             if ($order->get_status() === 'completed') {
+                $this->log( 'Замовлення #' . $params['order_id'] . ' вже завершено, пропускаємо' );
                 wp_die('Order already completed');
             }
 
@@ -276,12 +348,17 @@ function liqpay_gateway_class() {
             $option_key    = 'status_' . str_replace( '-', '_', $liqpay_status );
             $wc_status     = $this->get_option( $option_key );
 
+            $this->log( 'Статус від LiqPay: ' . $liqpay_status . ' → Статус WC: ' . $wc_status );
+
             if ( ! empty( $wc_status ) ) {
                 if ( $wc_status === 'completed' ) {
                     $order->payment_complete();
                 } else {
                     $order->update_status( $wc_status );
                 }
+                $this->log( 'Замовлення #' . $params['order_id'] . ' оновлено до статусу: ' . $wc_status, 'SUCCESS' );
+            } else {
+                $this->log( 'Помилка: не знайдено відповідного статусу WC для: ' . $liqpay_status, 'ERROR' );
             }
 
             wp_send_json_success();

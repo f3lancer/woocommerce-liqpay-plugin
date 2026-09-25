@@ -4,7 +4,7 @@
 Plugin Name: LiqPay plugin 
 Plugin URI: https://github.com/f3lancer/woocommerce-liqpay-plugin
 Description: Додає метод оплати LiqPay до WooCommerce. Перенаправляє покупця на сторінку оплати LiqPay, а після завершення автоматично оновлює статус замовлення (успіх, помилка, повернення, заморожування тощо) через вебхук. Підтримує тестовий режим та налаштовувані статуси для кожного типу відповіді LiqPay.
-Version: 0.3.2
+Version: 0.3.3
 Author: Oleg Korenovsky
 License: GPL3
 Text Domain: liqpay
@@ -208,7 +208,7 @@ function liqpay_gateway_class() {
 			$upload_dir = wp_upload_dir();
 			$log_file   = $upload_dir['basedir'] . '/liqpay-logs/liqpay.log';
 
-			if ( isset( $_POST['liqpay_clear_log'] ) && check_admin_referer( 'liqpay_clear_log' ) ) {
+			if ( isset( $_GET['liqpay_clear_log'] ) && check_admin_referer( 'liqpay_clear_log', '_wpnonce_liqpay_clear' ) ) {
 				file_put_contents( $log_file, '' );
 			}
 
@@ -218,26 +218,34 @@ function liqpay_gateway_class() {
 			$lines       = array_filter( explode( PHP_EOL, $log_content ) );
 			$lines       = array_reverse( $lines );
 			?>
-			<h2>Журнал запитів LiqPay</h2>
+			<h2 style="margin-top:2em;">Журнал запитів LiqPay</h2>
 			<p>Всі запити на оплату та вебхуки від LiqPay. Найновіші записи вгорі.</p>
-			<div style="background:#1e1e1e;color:#d4d4d4;font-family:monospace;font-size:12px;padding:12px;height:300px;overflow-y:scroll;border:1px solid #ccc;border-radius:4px;">
-				<?php if ( empty( $lines ) ) : ?>
-					<span style="color:#888;">— записів поки немає —</span>
-				<?php else : ?>
-					<?php foreach ( $lines as $line ) :
-						$color = '#d4d4d4';
-						if ( strpos( $line, '[ERROR]' ) !== false ) $color = '#f48771';
-						if ( strpos( $line, '[INFO]' ) !== false )  $color = '#9cdcfe';
-						if ( strpos( $line, '[SUCCESS]' ) !== false ) $color = '#4ec9b0';
-						?>
-						<div style="color:<?php echo $color; ?>;border-bottom:1px solid #333;padding:3px 0;"><?php echo esc_html( $line ); ?></div>
-					<?php endforeach; ?>
-				<?php endif; ?>
+			<div style="max-width:800px;">
+				<div style="background:#1e1e1e;color:#d4d4d4;font-family:monospace;font-size:12px;padding:12px;height:300px;overflow-y:scroll;border:1px solid #ccc;border-radius:4px 4px 0 0;">
+					<?php if ( empty( $lines ) ) : ?>
+						<span style="color:#888;">— записів поки немає —</span>
+					<?php else : ?>
+						<?php foreach ( $lines as $line ) :
+							$color = '#d4d4d4';
+							if ( strpos( $line, '[ERROR]' ) !== false )   $color = '#f48771';
+							if ( strpos( $line, '[INFO]' ) !== false )    $color = '#9cdcfe';
+							if ( strpos( $line, '[SUCCESS]' ) !== false ) $color = '#4ec9b0';
+							?>
+							<div style="color:<?php echo $color; ?>;border-bottom:1px solid #333;padding:3px 0;"><?php echo esc_html( $line ); ?></div>
+						<?php endforeach; ?>
+					<?php endif; ?>
+				</div>
+				<div style="background:#f6f7f7;border:1px solid #ccc;border-top:none;border-radius:0 0 4px 4px;padding:8px 12px;">
+					<?php
+					$clear_url = wp_nonce_url(
+						add_query_arg( 'liqpay_clear_log', '1' ),
+						'liqpay_clear_log',
+						'_wpnonce_liqpay_clear'
+					);
+					?>
+					<a href="<?php echo esc_url( $clear_url ); ?>" class="button button-secondary" onclick="return confirm('Очистити журнал?')">Очистити журнал</a>
+				</div>
 			</div>
-			<form method="post" style="margin-top:8px;">
-				<?php wp_nonce_field( 'liqpay_clear_log' ); ?>
-				<button type="submit" name="liqpay_clear_log" class="button" onclick="return confirm('Очистити журнал?')">Очистити журнал</button>
-			</form>
 			<?php
 		}
 

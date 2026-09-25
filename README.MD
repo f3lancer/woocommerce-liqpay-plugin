@@ -1,6 +1,6 @@
 Liqpay payment plugin for Woocommerce
 
-Version: 0.3.2
+Version: 0.3.3
 
 Woocommerce: <=8.2
 
